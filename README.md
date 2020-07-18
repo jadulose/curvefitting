@@ -2,7 +2,7 @@
 
 An easy-use and MATLAB-like graphical curve fitting tool, for Python, Jupyter Notebook and other environments.    
 
-![appearance](.\ui\appearance.png)
+![picture](.\ui\appearance.png)
 
 ### Install
 
