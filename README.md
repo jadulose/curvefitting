@@ -2,7 +2,7 @@
 
 An easy-use and MATLAB-like graphical curve fitting tool, for Python, Jupyter Notebook and other environments.    
 
-![picture](.\ui\appearance.png)
+![picture](https://github.com/Hamlet-Fansion/curvefitting/blob/master/ui/appearance.png)
 
 ### Install
 
