@@ -11,10 +11,10 @@ from PyQt5 import QtCore, QtWidgets
 from .GUI import Mainwindow
 import configparser
 
-if not os.path.exists(os.path.expanduser('~')+'\curvefitting.ini'):
+if not os.path.exists(os.path.expanduser('~') + os.sep + 'curvefitting.ini'):
     config = configparser.ConfigParser()
     config['DEFAULT'] = {"language": "en", "autofit": "False"}
-    with open(os.path.expanduser('~')+'\curvefitting.ini', 'w') as configfile:
+    with open(os.path.expanduser('~')+ os.sep + 'curvefitting.ini', 'w') as configfile:
         config.write(configfile)
 
 
