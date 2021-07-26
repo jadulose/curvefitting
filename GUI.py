@@ -10,8 +10,45 @@ import matplotlib.pyplot as plt
 from .fit import *
 import configparser
 
-language_path = os.path.realpath(__file__)[:-6] + "language\\"
 
+
+
+
+import sys
+import matplotlib
+matplotlib.use('Qt5Agg')
+
+from PyQt5 import QtCore, QtGui, QtWidgets
+
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT as NavigationToolbar
+from matplotlib.figure import Figure
+
+
+
+
+try:
+    plt.rcParams.update({
+        "text.usetex": True,
+        "font.family": "DejaVu Sans",
+        "font.serif": ["Palatino"],
+    })
+
+except:
+    print('Could not Latex-ify labels ')
+
+
+class MplCanvas(FigureCanvasQTAgg):
+
+    def __init__(self, parent=None, width=5, height=4, dpi=300, show_residuals=True):
+        fig = Figure(figsize=(width, height), dpi=dpi, tight_layout=True)
+        if show_residuals:
+            self.axes = fig.add_subplot(211)
+            self.residuals = fig.add_subplot(212,  sharex = self.axes)
+        else:
+            self.axes = fig.add_subplot(111)
+        super(MplCanvas, self).__init__(fig)
+
+language_path = os.path.realpath(__file__)[:-6] + "language" + os.sep
 
 class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None, rawVariables=None):
@@ -19,13 +56,19 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.show()
 
-        # 设置图像框
-        self.graphWidget = pg.PlotWidget()
-        self.gridLayout_3.addWidget(self.graphWidget)
-        self.graphWidget.setBackground('w')
-        self.graphWidget.showGrid(x=True, y=True)
+        self.show_residuals = True
+
+        # # 设置图像框
         self.Xlabel = None
         self.Ylabel = None
+
+        self.sc = MplCanvas(self, width=5, height=4, dpi=100, show_residuals=self.show_residuals)
+        self.sc.axes.grid(True)
+        self.toolbar = NavigationToolbar(self.sc, self)
+
+        self.gridLayout_3.addWidget(self.sc)
+        self.gridLayout_3.addWidget(self.toolbar)
+
 
         # 设置帮助、关于以及输入窗口，以及设置各种信号的连接
         self.rawVariables = rawVariables
@@ -52,7 +95,7 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
         # 设置翻译
         self.translator = QtCore.QTranslator()
         config = configparser.ConfigParser()
-        config.read(os.path.expanduser('~') + '\curvefitting.ini')
+        config.read(os.path.expanduser('~') + os.sep + 'curvefitting.ini')
         self.language = config['DEFAULT'].get('language', "en")
         if self.language == 'en':
             self.translate("en", nomatter=True)
@@ -153,11 +196,16 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
                 self.messege(
                     "无法绘制！\nX与Y的维度不同" if self.language == "zh_CN" else "Cannot plot!\nX and Y have different dimensions")
             else:
-                self.graphWidget.clear()
-                scatter = pg.ScatterPlotItem(pen=pg.mkPen(width=1, color='k'), symbol='o', size=4)
-                self.graphWidget.addItem(scatter)
-                pos = [{'pos': [x[i], y[i]]} for i in range(len(x))]
-                scatter.setData(pos)
+
+                self.full_x = x
+                self.full_y = y
+
+                self.sc.axes.clear()
+                self.sc.axes.scatter(x, y, s=5, c='k', label='Raw data', picker=True, pickradius=1)
+                self.outliers = np.zeros(x.shape).astype(bool)
+                self.sc.mpl_connect('pick_event', self.outlier_pick)
+                self.sc.draw()
+                
 
                 if self.autofit:
                     self.goodfit()
@@ -199,9 +247,10 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
             value = 0
         else:
             value = self.findcombo[str(index)].currentIndex()
+
         self.fitmod = (index, value)
 
-    def goodfit(self):
+    def goodfit(self, outliers=None):
         # 拟合接口函数
         if not self.autofit:
             self.pushButton.setDisabled(True)
@@ -214,6 +263,13 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
             self.findfitmod()
             self.x, self.y = eval(self.text1, self.rawVariables), eval(self.text2, self.rawVariables)
 
+            if outliers is not None:
+
+                self.x = self.x[np.logical_not(outliers)]
+                self.y = self.y[np.logical_not(outliers)]
+
+
+
             # 激发线程
             self.workthread = WorkThread([self])
             self.workthread.trigger.connect(self.goodfitback)
@@ -224,12 +280,9 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def goodfitback(self):
         # 把fit操作放在一个线程里，结束后触发的恢复按钮状态的操作
         if self.successfit:
+
+
             try:
-                pen = pg.mkPen(color='b', width=4)
-                xx = (self.x.min(), self.x.max())
-                self.graphWidget.plot(np.linspace(xx[0], xx[1], 200),
-                                      self.p(np.linspace(xx[0], xx[1], 200), *self.para),
-                                      name=self.lineEdit.text(), pen=pen)
 
                 self.textEdit.setText("")
                 text = give_reflect(self.x, self.y, self.p, self.para, self.para_names, self.fitmod, self.language)
@@ -238,10 +291,81 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
             except Exception as e:
                 self.messege(repr(e))
         else:
+
             self.messege(self.e)
+            pass
+
+        self.update_figure()
         if not self.autofit:
             self.pushButton.setDisabled(False)
         self.pushButton_2.setDisabled(True)
+
+
+    def update_figure(self):
+
+                xx = (self.x.min(), self.x.max())
+
+                self.sc.axes.clear()
+
+                self.sc.axes.grid(True)
+                self.sc.axes.scatter(self.full_x, self.full_y, s=5, c='k', label='Raw data', picker=True, pickradius=2)
+
+                if np.sum(self.outliers) > 0:
+                    self.sc.axes.scatter(self.full_x[self.outliers], self.full_y[self.outliers], s=50, marker='x', c='r', label='Outliers')
+
+
+                self.sc.axes.plot(np.linspace(xx[0], xx[1], 200), self.p(np.linspace(xx[0], xx[1], 200), *self.para), label='Fit')
+                self.sc.axes.set_xlabel(self.text1)
+                self.sc.axes.set_ylabel(self.text2)
+                self.sc.axes.legend()
+
+                if self.show_residuals:
+                    self.sc.residuals.clear()
+                    self.sc.residuals.set_title('Residuals')
+                    self.sc.residuals.grid(True)
+                    self.sc.residuals.plot(xx, [0,0], linestyle=':', label='Baseline')
+
+                    deviations = self.y-self.p(self.x, *self.para)
+
+                    self.sc.residuals.scatter(self.x, deviations, c='k', s=2, label='Residuals')
+                    self.sc.residuals.set_xlabel(self.text1)
+                    self.sc.residuals.set_ylabel(self.text2)
+
+                    y_zeros = np.zeros(self.x.shape)
+                    for x_0, y_0, y_dev in zip(self.x, y_zeros, deviations):
+
+
+                        # print(y_dev)
+
+                        try:
+
+                            if y_dev > 0:
+                                plot_color = 'g'
+                            else:
+                                plot_color = 'r'
+                            self.sc.residuals.plot([x_0, x_0], [y_0, y_dev], c=plot_color)
+                        
+                        except:
+                            pass
+                    
+                    self.sc.residuals.legend()
+
+                self.sc.setMinimumHeight(400)
+                self.sc.setMinimumWidth(400)
+
+                self.sc.mpl_connect('pick_event', self.outlier_pick)
+
+                self.sc.draw()
+
+    def outlier_pick(self, event):
+
+        ind = event.ind
+        point = tuple(zip(self.full_x[ind], self.full_y[ind]))
+        self.outliers[ind] = not self.outliers[ind]
+        # print('onpick point:', point, self.outliers)
+        if self.autofit:
+            self.goodfit(outliers=self.outliers)
+        self.update_figure()
 
     def stopfitting(self):
         # 停止拟合
@@ -308,9 +432,7 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
                                                                    os.getcwd(),
                                                                    "Portable Network Graphics(*.png);;Joint Photographic Group(*.jpg);;All Files(*)")
         if fileName:
-            ex = pyqtgraph.exporters.ImageExporter(self.graphWidget.plotItem)
-            ex.parameters()['width'] = 2000
-            ex.export(fileName)
+            self.sc.axes.figure.savefig(fileName, dpi=300)
 
     def action_autofit(self):
         if self.checkBox.isChecked():
@@ -323,7 +445,7 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
     def closeEvent(self, event):
         config = configparser.ConfigParser()
         config['DEFAULT'] = {"language": self.language, "autofit": str(self.checkBox.isChecked())}
-        with open(os.path.expanduser('~') + '\curvefitting.ini', 'w') as configfile:
+        with open(os.path.expanduser('~') + os.sep + 'curvefitting.ini', 'w') as configfile:
             config.write(configfile)
         event.accept()
 
@@ -369,7 +491,9 @@ class Mainwindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.comboBox_2.setCurrentIndex(0)
         self.comboBox_3.setCurrentIndex(0)
         self.comboBox_4.setCurrentIndex(0)
-        self.graphWidget.clear()
+
+        self.sc.clear()
+
         self.renew_xylabel()
         self.translate(self.language, nomatter=True)
         del self.x, self.y, self.p, self.text1, self.text2
@@ -386,8 +510,9 @@ class WorkThread(QtCore.QThread):
     def run(self):
         self.ui.successfit = False
         try:
-            self.ui.p, self.ui.para, self.ui.para_names = fit(self.ui.x, self.ui.y, mod=self.ui.fitmod)
+            self.ui.p, self.ui.para, self.ui.para_names = fit(self.ui.x.squeeze(), self.ui.y.squeeze(), mod=self.ui.fitmod)
         except Exception as e:
+
             self.ui.e = repr(e)
         else:
             self.ui.successfit = True

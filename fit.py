@@ -62,7 +62,8 @@ def give_reflect(x, y, f, para, para_names, mod, language):
              {"zh_CN": "{}项幂：", "en": " Power{}:"},
              {"zh_CN": "{}{}阶有理数：", "en": " Rat{}{}:"},
              {"zh_CN": "{}项正弦：", "en": " Sin{}:"},
-             {"zh_CN": "威布尔：", "en": "Weibull:"}]
+             {"zh_CN": "威布尔：", "en": "Weibull:"},
+             {"zh_CN": "威布尔：", "en": "Lorentzian:"}]
     text = []
     if mod[0] == 0:
         text.append(words[3][language] + words[4][language])
